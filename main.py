@@ -4,10 +4,12 @@ import webbrowser
 import pyttsx3
 import speech_recognition as sr
 import re
-import os  # NOUVEAU : Pour interagir avec les fichiers et logiciels de Windows
+import os
+import requests
+from colorama import init, Fore, Style
 
-# --- L'ANNUAIRE DES APPLICATIONS ---
-# Tu pourras ajouter tes futurs logiciels ici !
+init(autoreset=True)
+
 APPLICATIONS_LOCALES = {
     "chrome": "chrome",
     "brave": "brave",
@@ -25,14 +27,14 @@ def parler(texte):
             moteur.say(texte_propre)
             moteur.runAndWait()
     except Exception as e:
-        print(f"[Erreur vocale Windows : {e}]")
+        print(Fore.RED + f"[Erreur vocale : {e}]")
 
 recognizer = sr.Recognizer()
 
 def ecouter(mode_silencieux=False):
     with sr.Microphone() as source:
         if not mode_silencieux:
-            print("\n[🔴 Système écoute ta commande...]")
+            print(Fore.YELLOW + "\n[🔴 Système écoute ta commande...]")
             
         recognizer.adjust_for_ambient_noise(source, duration=0.5)
         try:
@@ -40,39 +42,51 @@ def ecouter(mode_silencieux=False):
             texte = recognizer.recognize_google(audio, language="fr-FR").lower()
             
             if not mode_silencieux:
-                print(f"Toi : {texte}")
+                print(Fore.GREEN + f"Toi : {texte}")
             return texte
             
         except sr.WaitTimeoutError:
             return ""
         except sr.UnknownValueError:
             if not mode_silencieux:
-                print("\n[Système : Je n'ai pas bien compris la commande.]")
+                print(Fore.CYAN + "\n[Système : Je n'ai pas bien compris la commande.]")
                 parler("Je n'ai pas bien compris.")
             return ""
         except Exception as e:
             if not mode_silencieux:
-                print(f"\n[Erreur micro : {e}]")
+                print(Fore.RED + f"\n[Erreur micro : {e}]")
             return ""
+
+def obtenir_meteo():
+    try:
+        url = "https://wttr.in/Garges-les-Gonesse?format=%C+%t"
+        reponse = requests.get(url, timeout=3)
+        return reponse.text.strip()
+    except:
+        return "Météo indisponible"
 
 # --- LA MÉMOIRE & LE CERVEAU ---
 historique_conversation = [
     {
         'role': 'system', 
         'content': (
-            "Tu es Système, l'assistant IA de mon ordinateur. "
-            "RÈGLE 1 : Si on te demande d'OUVRIR ou d'ALLER sur un site web, tu DOIS ajouter [OUVRIR: url]. "
-            "RÈGLE 2 : Si on te demande de LANCER, D'OUVRIR ou de DÉMARRER un logiciel ou une application (comme Chrome, Brave, Calculatrice), tu DOIS ajouter [LANCER: nom_du_logiciel]. "
-            "RÈGLE 3 : Tu es physiquement INCAPABLE de fermer des pages ou des applications. Si on te le demande, dis 'Désolé, je ne sais pas encore fermer de fenêtres' SANS balise."
+            "Tu es Système, l'assistant IA de mon ordinateur. Tu es direct et concis. "
+            "VOICI TES 3 SEULS POUVOIRS (Tu dois utiliser ces balises exactes) : "
+            "1. Pour ouvrir un site : [OUVRIR: url] "
+            "2. Pour lancer un logiciel : [LANCER: nom_logiciel] "
+            "3. Pour créer un fichier : [CREER: nom_fichier.ext] "
+            "INTERDICTION ABSOLUE : N'invente JAMAIS d'autres balises (pas de [REPONSE:], pas de [FERMER:]). "
+            "Si tu ne peux pas faire une action, dis-le simplement en texte normal."
         )
     }
 ]
 
 def demander_au_systeme(texte_utilisateur):
     heure_actuelle = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-    contexte_temporel = f"[Système : Nous sommes le {heure_actuelle}] "
+    meteo_actuelle = obtenir_meteo()
     
-    historique_conversation.append({'role': 'user', 'content': contexte_temporel + texte_utilisateur})
+    contexte_total = f"[Contexte -> Date/Heure: {heure_actuelle} | Météo: {meteo_actuelle}] "
+    historique_conversation.append({'role': 'user', 'content': contexte_total + texte_utilisateur})
     
     try:
         reponse = ollama.chat(model='mistral', messages=historique_conversation)
@@ -81,27 +95,28 @@ def demander_au_systeme(texte_utilisateur):
         return texte_reponse
     except Exception as e:
         historique_conversation.pop()
-        return f"Erreur critique Ollama : {e}"
+        return f"Erreur Ollama : {e}"
 
-# --- BOUCLE PRINCIPALE ---
 if __name__ == "__main__":
-    print("=====================================")
-    print(" Système v1.7 - Contrôle des Applications Locales")
-    print("=====================================")
+    print(Fore.CYAN + Style.BRIGHT + "========================================================")
+    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v2.1 - Contrôle Fichiers & Anti-Hallucinations")
+    print(Fore.CYAN + Style.BRIGHT + "========================================================")
     
-    parler("Mode veille activé. Appelez-moi Système si vous avez besoin de moi.")
+    parler("Mise à jour terminée. Je peux maintenant créer des fichiers sur votre bureau.")
+    
+    # On identifie le chemin du Bureau de ton Windows
+    chemin_bureau = os.path.join(os.path.expanduser("~"), "Desktop")
     
     while True:
-        print("\n[💤 Mode Veille : En attente du mot 'Système'...]")
+        print(Style.DIM + "\n[💤 Mode Veille : En attente du mot 'Système'...]")
         texte_entendu = ecouter(mode_silencieux=True)
         
         if "système" in texte_entendu or "systeme" in texte_entendu:
-            
             commande = texte_entendu.replace("système", "").replace("systeme", "").strip()
             
             if commande:
                 requete = commande
-                print(f"Toi : Système, {requete}")
+                print(Fore.GREEN + f"Toi : Système, {requete}")
             else:
                 parler("Oui monsieur ?")
                 requete = ecouter(mode_silencieux=False)
@@ -110,7 +125,7 @@ if __name__ == "__main__":
             
             if requete in ['exit', 'quit', 'quitter', 'désactiver', 'arrête-toi']:
                 message_fin = "Extinction des programmes. À bientôt."
-                print(f"Système : {message_fin}")
+                print(Fore.CYAN + f"Système : {message_fin}")
                 parler(message_fin)
                 break
             
@@ -123,48 +138,58 @@ if __name__ == "__main__":
                     fin = reponse_ia.find("]", debut)
                     url = reponse_ia[debut:fin].strip()
                     webbrowser.open_new_tab(url)
-                    
                     reponse_propre = reponse_ia[:reponse_ia.find("[OUVRIR:")].strip()
                     if reponse_propre:
-                        print(f"Système : {reponse_propre}")
+                        print(Fore.CYAN + f"Système : {reponse_propre}")
                         parler(reponse_propre)
-                    else:
-                        print("Système : J'ouvre la page immédiatement.")
-                        parler("J'ouvre la page immédiatement.")
                 except Exception as e:
-                    print(f"Système : Erreur web ({e})")
+                    print(Fore.RED + f"Erreur web : {e}")
             
             # --- ACTION 2 : LANCEMENT DE LOGICIEL ---
             elif "[LANCER:" in reponse_ia:
                 try:
                     debut = reponse_ia.find("[LANCER:") + 8
                     fin = reponse_ia.find("]", debut)
-                    # On met le nom en minuscules pour que ça corresponde à notre annuaire
                     app_demande = reponse_ia[debut:fin].strip().lower()
-                    
-                    # On vérifie si l'application est dans notre annuaire
                     if app_demande in APPLICATIONS_LOCALES:
-                        nom_executable = APPLICATIONS_LOCALES[app_demande]
-                        os.system(f"start {nom_executable}")
-                        msg = f"Je lance {app_demande} immédiatement."
-                    else:
-                        msg = f"Désolé, je ne connais pas le chemin pour ouvrir {app_demande}."
-                    
-                    # On nettoie le texte pour que la voix ne lise pas la balise
+                        os.system(f"start {APPLICATIONS_LOCALES[app_demande]}")
                     reponse_propre = reponse_ia[:reponse_ia.find("[LANCER:")].strip()
                     if reponse_propre:
-                        print(f"Système : {reponse_propre}")
+                        print(Fore.CYAN + f"Système : {reponse_propre}")
+                        parler(reponse_propre)
+                except Exception as e:
+                    print(Fore.RED + f"Erreur logiciel : {e}")
+                    
+            # --- ACTION 3 : CRÉATION DE FICHIER (NOUVEAU) ---
+            elif "[CREER:" in reponse_ia:
+                try:
+                    debut = reponse_ia.find("[CREER:") + 7
+                    fin = reponse_ia.find("]", debut)
+                    nom_fichier = reponse_ia[debut:fin].strip()
+                    
+                    # On crée le chemin complet vers ton Bureau
+                    chemin_complet = os.path.join(chemin_bureau, nom_fichier)
+                    
+                    # On crée le fichier
+                    with open(chemin_complet, 'w', encoding='utf-8') as f:
+                        f.write("Fichier généré par Système IA.")
+                        
+                    reponse_propre = reponse_ia[:reponse_ia.find("[CREER:")].strip()
+                    msg_succes = f"J'ai créé le fichier {nom_fichier} sur votre bureau."
+                    
+                    if reponse_propre:
+                        print(Fore.CYAN + f"Système : {reponse_propre} ({msg_succes})")
                         parler(reponse_propre)
                     else:
-                        print(f"Système : {msg}")
-                        parler(msg)
+                        print(Fore.CYAN + f"Système : {msg_succes}")
+                        parler(msg_succes)
                         
                 except Exception as e:
-                    erreur = "Erreur lors du lancement de l'application."
-                    print(f"Système : {erreur} ({e})")
+                    erreur = "Je n'ai pas pu créer le fichier."
+                    print(Fore.RED + f"Système : {erreur} ({e})")
                     parler(erreur)
-                    
-            # --- ACTION 3 : DISCUSSION NORMALE ---
+
+            # --- ACTION 4 : DISCUSSION NORMALE ---
             else:
-                print(f"Système : {reponse_ia}")
+                print(Fore.CYAN + f"Système : {reponse_ia}")
                 parler(reponse_ia)
