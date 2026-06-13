@@ -4,6 +4,17 @@ import webbrowser
 import pyttsx3
 import speech_recognition as sr
 import re
+import os  # NOUVEAU : Pour interagir avec les fichiers et logiciels de Windows
+
+# --- L'ANNUAIRE DES APPLICATIONS ---
+# Tu pourras ajouter tes futurs logiciels ici !
+APPLICATIONS_LOCALES = {
+    "chrome": "chrome",
+    "brave": "brave",
+    "bloc-notes": "notepad",
+    "calculatrice": "calc",
+    "explorateur": "explorer"
+}
 
 def parler(texte):
     try:
@@ -50,9 +61,9 @@ historique_conversation = [
         'role': 'system', 
         'content': (
             "Tu es Système, l'assistant IA de mon ordinateur. "
-            "RÈGLE 1 : Si on te demande d'OUVRIR ou d'ALLER sur un site web, tu DOIS ajouter la balise [OUVRIR: url]. "
-            "RÈGLE 2 : Tu es physiquement INCAPABLE de fermer des pages, des onglets ou des applications. "
-            "RÈGLE 3 : Si on te demande de FERMER quelque chose, tu dois IMPÉRATIVEMENT répondre 'Désolé, je ne sais pas encore fermer de fenêtres' SANS utiliser aucune balise."
+            "RÈGLE 1 : Si on te demande d'OUVRIR ou d'ALLER sur un site web, tu DOIS ajouter [OUVRIR: url]. "
+            "RÈGLE 2 : Si on te demande de LANCER, D'OUVRIR ou de DÉMARRER un logiciel ou une application (comme Chrome, Brave, Calculatrice), tu DOIS ajouter [LANCER: nom_du_logiciel]. "
+            "RÈGLE 3 : Tu es physiquement INCAPABLE de fermer des pages ou des applications. Si on te le demande, dis 'Désolé, je ne sais pas encore fermer de fenêtres' SANS balise."
         )
     }
 ]
@@ -75,7 +86,7 @@ def demander_au_systeme(texte_utilisateur):
 # --- BOUCLE PRINCIPALE ---
 if __name__ == "__main__":
     print("=====================================")
-    print(" Système v1.6 - Mode Veille & Nouveau Nom")
+    print(" Système v1.7 - Contrôle des Applications Locales")
     print("=====================================")
     
     parler("Mode veille activé. Appelez-moi Système si vous avez besoin de moi.")
@@ -84,26 +95,19 @@ if __name__ == "__main__":
         print("\n[💤 Mode Veille : En attente du mot 'Système'...]")
         texte_entendu = ecouter(mode_silencieux=True)
         
-        # On vérifie les deux orthographes possibles
         if "système" in texte_entendu or "systeme" in texte_entendu:
             
-            # On nettoie le mot d'activation pour isoler la commande
             commande = texte_entendu.replace("système", "").replace("systeme", "").strip()
             
-            # Cas 1 : "Système ouvre github"
             if commande:
                 requete = commande
                 print(f"Toi : Système, {requete}")
-                
-            # Cas 2 : Juste "Système"
             else:
                 parler("Oui monsieur ?")
                 requete = ecouter(mode_silencieux=False)
-                
                 if not requete:
                     continue
             
-            # --- TRAITEMENT DE LA COMMANDE ---
             if requete in ['exit', 'quit', 'quitter', 'désactiver', 'arrête-toi']:
                 message_fin = "Extinction des programmes. À bientôt."
                 print(f"Système : {message_fin}")
@@ -112,12 +116,12 @@ if __name__ == "__main__":
             
             reponse_ia = demander_au_systeme(requete)
             
+            # --- ACTION 1 : NAVIGATION WEB ---
             if "[OUVRIR:" in reponse_ia:
                 try:
                     debut = reponse_ia.find("[OUVRIR:") + 8
                     fin = reponse_ia.find("]", debut)
                     url = reponse_ia[debut:fin].strip()
-                    
                     webbrowser.open_new_tab(url)
                     
                     reponse_propre = reponse_ia[:reponse_ia.find("[OUVRIR:")].strip()
@@ -125,14 +129,42 @@ if __name__ == "__main__":
                         print(f"Système : {reponse_propre}")
                         parler(reponse_propre)
                     else:
-                        msg = "J'ouvre la page immédiatement."
+                        print("Système : J'ouvre la page immédiatement.")
+                        parler("J'ouvre la page immédiatement.")
+                except Exception as e:
+                    print(f"Système : Erreur web ({e})")
+            
+            # --- ACTION 2 : LANCEMENT DE LOGICIEL ---
+            elif "[LANCER:" in reponse_ia:
+                try:
+                    debut = reponse_ia.find("[LANCER:") + 8
+                    fin = reponse_ia.find("]", debut)
+                    # On met le nom en minuscules pour que ça corresponde à notre annuaire
+                    app_demande = reponse_ia[debut:fin].strip().lower()
+                    
+                    # On vérifie si l'application est dans notre annuaire
+                    if app_demande in APPLICATIONS_LOCALES:
+                        nom_executable = APPLICATIONS_LOCALES[app_demande]
+                        os.system(f"start {nom_executable}")
+                        msg = f"Je lance {app_demande} immédiatement."
+                    else:
+                        msg = f"Désolé, je ne connais pas le chemin pour ouvrir {app_demande}."
+                    
+                    # On nettoie le texte pour que la voix ne lise pas la balise
+                    reponse_propre = reponse_ia[:reponse_ia.find("[LANCER:")].strip()
+                    if reponse_propre:
+                        print(f"Système : {reponse_propre}")
+                        parler(reponse_propre)
+                    else:
                         print(f"Système : {msg}")
                         parler(msg)
                         
                 except Exception as e:
-                    erreur = "Erreur lors de l'ouverture."
+                    erreur = "Erreur lors du lancement de l'application."
                     print(f"Système : {erreur} ({e})")
                     parler(erreur)
+                    
+            # --- ACTION 3 : DISCUSSION NORMALE ---
             else:
                 print(f"Système : {reponse_ia}")
                 parler(reponse_ia)
