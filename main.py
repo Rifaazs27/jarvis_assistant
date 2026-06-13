@@ -1,19 +1,23 @@
-import ollama
 import datetime
 import webbrowser
-import pyttsx3
 import speech_recognition as sr
 import re
 import os
 import requests
 from colorama import init, Fore, Style
 from notion_client import Client
+import asyncio
+import edge_tts
+import tempfile
+import pygame
+from groq import Groq  # <-- Nouveau moteur d'IA
 
 init(autoreset=True)
 
-# --- CONFIGURATION NOTION ---
+# --- CONFIGURATIONS API ---
 notion = Client(auth="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")
 PAGE_ID = "37eddba847a88077a8f9d523621ca6bd"
+client_groq = Groq(api_key="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") # <-- COLLE TA CLÉ GROQ ICI
 
 # --- L'ANNUAIRE DES APPLICATIONS ---
 APPLICATIONS_LOCALES = {
@@ -26,13 +30,29 @@ APPLICATIONS_LOCALES = {
 
 def parler(texte):
     try:
-        moteur = pyttsx3.init()
-        moteur.setProperty('rate', 170)
         texte_propre = re.sub(r'\[.*?\]', '', texte).strip()
         texte_propre = re.sub(r'(OUVRIR|LANCER|CREER|SUPPRIMER|LIRE|NOTION|TERMINER).*', '', texte_propre, flags=re.IGNORECASE).strip()
-        if texte_propre:
-            moteur.say(texte_propre)
-            moteur.runAndWait()
+        
+        if not texte_propre:
+            return
+
+        async def _synthese():
+            communicate = edge_tts.Communicate(texte_propre, "fr-FR-HenriNeural", rate="+10%")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+                chemin_tmp = f.name
+            await communicate.save(chemin_tmp)
+            return chemin_tmp
+
+        chemin_audio = asyncio.run(_synthese())
+
+        pygame.mixer.init()
+        pygame.mixer.music.load(chemin_audio)
+        pygame.mixer.music.play()
+        while pygame.mixer.music.get_busy():
+            pygame.time.Clock().tick(10)
+        pygame.mixer.quit()
+        os.remove(chemin_audio)
+
     except Exception as e:
         print(Fore.RED + f"[Erreur vocale : {e}]")
 
@@ -41,12 +61,7 @@ def lire_notion():
     try:
         reponse = notion.databases.query(
             database_id=PAGE_ID,
-            filter={
-                "property": "État",
-                "status": {
-                    "does_not_equal": "Terminé"
-                }
-            }
+            filter={"property": "État", "status": {"does_not_equal": "Terminé"}}
         )
         
         aujourdhui = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -143,8 +158,14 @@ def demander_au_systeme(texte_utilisateur):
     historique_conversation.append({'role': 'user', 'content': message_formate})
     
     try:
-        reponse = ollama.chat(model='mistral', messages=historique_conversation)
-        texte_reponse = reponse['message']['content']
+        # --- APPEL À L'API ULTRA-RAPIDE GROQ ---
+        reponse = client_groq.chat.completions.create(
+            messages=historique_conversation,
+            model="llama-3.3-70b-versatile",
+            temperature=0.2, # Rend l'IA très obéissante et constante
+            max_tokens=150
+        )
+        texte_reponse = reponse.choices[0].message.content
         
         historique_conversation[-1]['content'] = texte_utilisateur
         historique_conversation.append({'role': 'assistant', 'content': texte_reponse})
@@ -152,14 +173,14 @@ def demander_au_systeme(texte_utilisateur):
         return texte_reponse
     except Exception as e:
         historique_conversation.pop()
-        return f"Erreur Ollama : {e}"
+        return f"Erreur Moteur IA : {e}"
 
 if __name__ == "__main__":
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
-    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v4.0 - Intégration Notion Premium")
+    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v5.0 - Moteur Groq Turbo (Vitesse Lumière)")
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
     
-    parler("Système en ligne. Synchronisation générale effectuée.")
+    parler("Système en ligne. Moteur neuronal activé.")
     chemin_bureau = os.path.join(os.path.expanduser("~"), "Desktop")
     
     while True:
