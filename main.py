@@ -1,7 +1,6 @@
 import ollama
 import datetime
 import webbrowser
-import pyttsx3
 import speech_recognition as sr
 import re
 import os
@@ -9,6 +8,10 @@ import requests
 import pyautogui
 from colorama import init, Fore, Style
 from notion_client import Client
+import asyncio
+import edge_tts
+import tempfile
+import pygame
 
 notion = Client(auth="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")
 PAGE_ID = "37eddba847a88077a8f9d523621ca6bd"
@@ -25,13 +28,28 @@ APPLICATIONS_LOCALES = {
 
 def parler(texte):
     try:
-        moteur = pyttsx3.init()
-        moteur.setProperty('rate', 170)
         texte_propre = re.sub(r'\[.*?\]', '', texte).strip()
         texte_vocal = texte_propre.replace("/", " sur ").replace("*", "").replace("_", " ")
-        if texte_vocal:
-            moteur.say(texte_vocal)
-            moteur.runAndWait()
+        if not texte_vocal:
+            return
+
+        async def _synthese():
+            communicate = edge_tts.Communicate(texte_vocal, "fr-FR-HenriNeural", rate="+10%", volume="+0%")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+                chemin_tmp = f.name
+            await communicate.save(chemin_tmp)
+            return chemin_tmp
+
+        chemin_audio = asyncio.run(_synthese())
+
+        pygame.mixer.init()
+        pygame.mixer.music.load(chemin_audio)
+        pygame.mixer.music.play()
+        while pygame.mixer.music.get_busy():
+            pygame.time.Clock().tick(10)
+        pygame.mixer.quit()
+        os.remove(chemin_audio)
+
     except Exception as e:
         print(Fore.RED + f"[Erreur vocale : {e}]")
 
@@ -54,7 +72,7 @@ def lire_notion():
         
         for page in reponse.get('results', []):
             titre_prop = page['properties'].get('Nom de la tâche', {})
-            date_prop = page['properties'].get('Date d’échéance', {}) or page['properties'].get('Date d’échéance', {})
+            date_prop = page['properties'].get("Date d\u2019\u00e9ch\u00e9ance", {}) or page['properties'].get("Date d'\u00e9ch\u00e9ance", {})
             
             tache_texte = ""
             if titre_prop.get('title'):
@@ -187,7 +205,7 @@ if __name__ == "__main__":
                         date_tache = date_str.strip()
                     
                     # Détection du nom exact de la colonne date
-                    colonne_date = "Date d’échéance"
+                    colonne_date = "Date d\u2019\u00e9ch\u00e9ance"
                     
                     notion.pages.create(
                         parent={"database_id": PAGE_ID},
