@@ -54,8 +54,7 @@ def obtenir_meteo():
     except:
         return "Météo indisponible"
 
-# --- LE CERVEAU (RÈGLES STRICTES & STABLES) ---
-# --- LE CERVEAU (RÈGLES STRICTES & STABLES) ---
+# --- LE CERVEAU (LE STYLO DE L'IA) ---
 historique_conversation = [
     {
         'role': 'system', 
@@ -65,8 +64,10 @@ historique_conversation = [
             "1. Météo/Heure : Utilise les DONNÉES SYSTÈME pour répondre naturellement.\n"
             "2. Ouvrir un site : réponds [OUVRIR: url].\n"
             "3. Lancer un logiciel : réponds [LANCER: nom].\n"
-            "4. Créer un fichier : réponds [CREER: nom_fichier.txt]. Le nom du fichier DOIT être EXACTEMENT celui demandé par l'utilisateur. N'utilise JAMAIS la date, l'heure ou la météo pour le nommer.\n"
-            "Exemple : Si l'utilisateur dit 'crée un fichier nommé jar', tu dois répondre UNIQUEMENT [CREER: jar.txt]."
+            "4. Créer un fichier : réponds [CREER: nom_fichier.ext | contenu exact]. "
+            "Tu DOIS utiliser le symbole '|' pour séparer le nom du fichier et le contenu à écrire dedans. "
+            "Rédige le code ou le texte demandé directement dans la section contenu.\n"
+            "Exemple : Si l'utilisateur dit 'crée un script python qui dit bonjour', tu réponds UNIQUEMENT [CREER: bonjour.py | print('Bonjour')]."
         )
     }
 ]
@@ -89,23 +90,21 @@ def demander_au_systeme(texte_utilisateur):
         reponse = ollama.chat(model='mistral', messages=historique_conversation)
         texte_reponse = reponse['message']['content']
         
-        # ASTUCE PRO : On nettoie l'historique en remplaçant le gros bloc par juste ta commande
-        # Ça évite que l'IA ne sature sa mémoire avec la météo à chaque message
+        # On nettoie l'historique
         historique_conversation[-1]['content'] = texte_utilisateur
         historique_conversation.append({'role': 'assistant', 'content': texte_reponse})
         
         return texte_reponse
     except Exception as e:
-        # En cas d'erreur, on retire le dernier message pour ne pas corrompre la mémoire
         historique_conversation.pop()
         return f"Erreur Ollama : {e}"
 
 if __name__ == "__main__":
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
-    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v2.5 - Version Stable (Core & Actions)")
+    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v2.6 - Le Stylo de l'IA (Création de contenu)")
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
     
-    parler("Système opérationnel et stabilisé. En attente de vos directives.")
+    parler("Système opérationnel. Mes modules de rédaction sont en ligne.")
     chemin_bureau = os.path.join(os.path.expanduser("~"), "Desktop")
     
     while True:
@@ -156,15 +155,30 @@ if __name__ == "__main__":
                     
             elif "[CREER:" in reponse_ia:
                 try:
-                    nom = re.search(r'\[CREER: (.*?)\]', reponse_ia).group(1)
-                    # Sécurité pour forcer l'extension .txt si l'IA l'oublie
-                    if not nom.endswith('.txt'): nom += ".txt"
+                    debut = reponse_ia.find("[CREER:") + 7
+                    # rfind permet de chercher le tout dernier crochet de la réponse
+                    fin = reponse_ia.rfind("]") 
+                    commande_creer = reponse_ia[debut:fin].strip()
                     
-                    with open(os.path.join(chemin_bureau, nom), 'w', encoding='utf-8') as f: 
-                        f.write("Généré par Système IA.")
+                    # Découpage du nom et du contenu
+                    if "|" in commande_creer:
+                        nom_fichier, contenu = commande_creer.split("|", 1)
+                        nom_fichier = nom_fichier.strip()
+                        contenu = contenu.strip()
+                    else:
+                        nom_fichier = commande_creer.strip()
+                        contenu = "Fichier généré par Système IA."
+                    
+                    # Sécurité : on ajoute .txt seulement s'il n'y a pas d'extension du tout (.py, .html, etc.)
+                    if "." not in nom_fichier: 
+                        nom_fichier += ".txt"
+                    
+                    # Création physique du fichier
+                    with open(os.path.join(chemin_bureau, nom_fichier), 'w', encoding='utf-8') as f: 
+                        f.write(contenu)
                     
                     reponse_propre = reponse_ia[:reponse_ia.find("[CREER:")].strip()
-                    msg = f"J'ai créé le fichier {nom} sur votre bureau."
+                    msg = f"J'ai créé le fichier {nom_fichier} avec le contenu demandé."
                     
                     if reponse_propre:
                         print(Fore.CYAN + f"Système : {reponse_propre}")
