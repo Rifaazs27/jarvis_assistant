@@ -54,7 +54,7 @@ def obtenir_meteo():
     except:
         return "Météo indisponible"
 
-# --- LE CERVEAU (CONTRÔLE OS) ---
+# --- LE CERVEAU ---
 historique_conversation = [
     {
         'role': 'system', 
@@ -62,11 +62,12 @@ historique_conversation = [
             "Tu es Système, l'assistant IA de mon ordinateur. "
             "RÈGLES STRICTES :\n"
             "1. Conversation normale : réponds en texte brut, SANS BALISE.\n"
-            "2. Ouvrir un site : réponds [OUVRIR: url].\n"
-            "3. Lancer un logiciel : réponds [LANCER: nom].\n"
-            "4. Créer un fichier : réponds [CREER: nom_fichier.ext | contenu].\n"
-            "5. Verrouiller le PC : réponds UNIQUEMENT [VERROUILLER].\n"
-            "6. Éteindre le PC : réponds UNIQUEMENT [ETEINDRE].\n"
+            "2. Ouvrir un site : [OUVRIR: url].\n"
+            "3. Lancer un logiciel : [LANCER: nom].\n"
+            "4. Créer un fichier : [CREER: nom_fichier.ext | contenu].\n"
+            "5. Verrouiller le PC : [VERROUILLER].\n"
+            "6. Éteindre le PC : [ETEINDRE].\n"
+            "7. Lire/Résumer un fichier : réponds [LIRE: nom_fichier.ext]. Utilise cette balise dès qu'on te demande 'dis-moi ce qu'il y a dans', 'lis', 'analyse' ou 'résume' un fichier.\n"
             "INTERDICTION ABSOLUE : N'invente JAMAIS d'autres balises."
         )
     }
@@ -75,7 +76,6 @@ historique_conversation = [
 def demander_au_systeme(texte_utilisateur):
     heure_actuelle = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    # On sépare visuellement les infos pour que l'IA ne les mélange plus avec ta commande
     message_formate = (
         f"--- DONNÉES SYSTÈME ---\n"
         f"Heure: {heure_actuelle} | Météo: {obtenir_meteo()}\n"
@@ -83,14 +83,12 @@ def demander_au_systeme(texte_utilisateur):
         f"{texte_utilisateur}"
     )
     
-    # On envoie le message formaté à l'IA
     historique_conversation.append({'role': 'user', 'content': message_formate})
     
     try:
         reponse = ollama.chat(model='mistral', messages=historique_conversation)
         texte_reponse = reponse['message']['content']
         
-        # On nettoie l'historique
         historique_conversation[-1]['content'] = texte_utilisateur
         historique_conversation.append({'role': 'assistant', 'content': texte_reponse})
         
@@ -101,10 +99,10 @@ def demander_au_systeme(texte_utilisateur):
 
 if __name__ == "__main__":
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
-    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v2.7 - Contrôle Système OS")
+    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v2.9 - Recherche de Fichiers Floue Intelligente")
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
     
-    parler("Système opérationnel. Accès aux commandes de l'ordinateur autorisé.")
+    parler("Système en ligne. Moteur de recherche de fichiers optimisé.")
     chemin_bureau = os.path.join(os.path.expanduser("~"), "Desktop")
     
     while True:
@@ -184,8 +182,57 @@ if __name__ == "__main__":
                         parler(msg)
                 except Exception as e:
                     print(Fore.RED + f"Erreur création fichier : {e}")
+
+            # --- NOUVELLE ACTION AUTOMATISÉE : RECHERCHE INTÉLLIGENTE ---
+            elif "[LIRE:" in reponse_ia:
+                try:
+                    debut = reponse_ia.find("[LIRE:") + 6
+                    fin = reponse_ia.find("]", debut)
+                    nom_fichier_ia = reponse_ia[debut:fin].strip()
+                    
+                    # Détection simplifiée du nom voulu par l'IA (ex: chaperon_rouge -> chaperonrouge)
+                    nom_cible = os.path.splitext(nom_fichier_ia)[0].lower()
+                    nom_cible = nom_cible.replace(" ", "").replace("_", "").replace("-", "")
+                    
+                    fichier_trouve = None
+                    
+                    # On scanne le bureau pour trouver le fichier correspondant
+                    for f in os.listdir(chemin_bureau):
+                        if os.path.isfile(os.path.join(chemin_bureau, f)):
+                            nom_disque, ext_disque = os.path.splitext(f)
+                            nom_disque_propre = nom_disque.lower().replace(" ", "").replace("_", "").replace("-", "")
+                            
+                            # Si les noms nettoyés matchent, on a trouvé notre cible !
+                            if nom_disque_propre == nom_cible:
+                                fichier_trouve = f
+                                break
+                    
+                    if fichier_trouve:
+                        chemin_complet = os.path.join(chemin_bureau, fichier_trouve)
+                        with open(chemin_complet, 'r', encoding='utf-8') as f:
+                            contenu_fichier = f.read()
+                            
+                        print(Fore.MAGENTA + f"Système : Analyse de {fichier_trouve}...")
+                        
+                        demande_lecture = f"Voici le contenu de {fichier_trouve} : '{contenu_fichier}'. Résume ou réponds naturellement à l'oral."
+                        historique_conversation.append({'role': 'user', 'content': demande_lecture})
+                        
+                        reponse_lecture = ollama.chat(model='mistral', messages=historique_conversation)
+                        texte_lu = reponse_lecture['message']['content']
+                        
+                        historique_conversation.append({'role': 'assistant', 'content': texte_lu})
+                        
+                        print(Fore.CYAN + f"Système : {texte_lu}")
+                        parler(texte_lu)
+                    else:
+                        erreur = f"Désolé, je ne trouve aucun fichier ressemblant à '{nom_fichier_ia}' sur le bureau."
+                        print(Fore.RED + f"Système : {erreur}")
+                        parler(erreur)
+                        
+                except Exception as e:
+                    print(Fore.RED + f"Erreur de lecture : {e}")
             
-            # --- NOUVELLES ACTIONS OS ---
+            # --- ACTIONS OS ---
             elif "[VERROUILLER]" in reponse_ia:
                 print(Fore.RED + "Système : Verrouillage de la session en cours...")
                 parler("Je verrouille votre session immédiatement.")
