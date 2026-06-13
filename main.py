@@ -54,20 +54,20 @@ def obtenir_meteo():
     except:
         return "Météo indisponible"
 
-# --- LE CERVEAU (LE STYLO DE L'IA) ---
+# --- LE CERVEAU (CONTRÔLE OS) ---
 historique_conversation = [
     {
         'role': 'system', 
         'content': (
             "Tu es Système, l'assistant IA de mon ordinateur. "
             "RÈGLES STRICTES :\n"
-            "1. Météo/Heure : Utilise les DONNÉES SYSTÈME pour répondre naturellement.\n"
+            "1. Conversation normale : réponds en texte brut, SANS BALISE.\n"
             "2. Ouvrir un site : réponds [OUVRIR: url].\n"
             "3. Lancer un logiciel : réponds [LANCER: nom].\n"
-            "4. Créer un fichier : réponds [CREER: nom_fichier.ext | contenu exact]. "
-            "Tu DOIS utiliser le symbole '|' pour séparer le nom du fichier et le contenu à écrire dedans. "
-            "Rédige le code ou le texte demandé directement dans la section contenu.\n"
-            "Exemple : Si l'utilisateur dit 'crée un script python qui dit bonjour', tu réponds UNIQUEMENT [CREER: bonjour.py | print('Bonjour')]."
+            "4. Créer un fichier : réponds [CREER: nom_fichier.ext | contenu].\n"
+            "5. Verrouiller le PC : réponds UNIQUEMENT [VERROUILLER].\n"
+            "6. Éteindre le PC : réponds UNIQUEMENT [ETEINDRE].\n"
+            "INTERDICTION ABSOLUE : N'invente JAMAIS d'autres balises."
         )
     }
 ]
@@ -101,10 +101,10 @@ def demander_au_systeme(texte_utilisateur):
 
 if __name__ == "__main__":
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
-    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v2.6 - Le Stylo de l'IA (Création de contenu)")
+    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v2.7 - Contrôle Système OS")
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
     
-    parler("Système opérationnel. Mes modules de rédaction sont en ligne.")
+    parler("Système opérationnel. Accès aux commandes de l'ordinateur autorisé.")
     chemin_bureau = os.path.join(os.path.expanduser("~"), "Desktop")
     
     while True:
@@ -156,11 +156,9 @@ if __name__ == "__main__":
             elif "[CREER:" in reponse_ia:
                 try:
                     debut = reponse_ia.find("[CREER:") + 7
-                    # rfind permet de chercher le tout dernier crochet de la réponse
                     fin = reponse_ia.rfind("]") 
                     commande_creer = reponse_ia[debut:fin].strip()
                     
-                    # Découpage du nom et du contenu
                     if "|" in commande_creer:
                         nom_fichier, contenu = commande_creer.split("|", 1)
                         nom_fichier = nom_fichier.strip()
@@ -169,11 +167,9 @@ if __name__ == "__main__":
                         nom_fichier = commande_creer.strip()
                         contenu = "Fichier généré par Système IA."
                     
-                    # Sécurité : on ajoute .txt seulement s'il n'y a pas d'extension du tout (.py, .html, etc.)
                     if "." not in nom_fichier: 
                         nom_fichier += ".txt"
                     
-                    # Création physique du fichier
                     with open(os.path.join(chemin_bureau, nom_fichier), 'w', encoding='utf-8') as f: 
                         f.write(contenu)
                     
@@ -188,7 +184,18 @@ if __name__ == "__main__":
                         parler(msg)
                 except Exception as e:
                     print(Fore.RED + f"Erreur création fichier : {e}")
-                    
+            
+            # --- NOUVELLES ACTIONS OS ---
+            elif "[VERROUILLER]" in reponse_ia:
+                print(Fore.RED + "Système : Verrouillage de la session en cours...")
+                parler("Je verrouille votre session immédiatement.")
+                os.system("rundll32.exe user32.dll,LockWorkStation")
+                
+            elif "[ETEINDRE]" in reponse_ia:
+                print(Fore.RED + "Système : Extinction programmée dans 60 secondes.")
+                parler("Attention. Le système s'éteindra dans une minute.")
+                os.system("shutdown /s /t 60")
+                
             else:
                 print(Fore.CYAN + f"Système : {reponse_ia}")
                 parler(reponse_ia)
