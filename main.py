@@ -1,59 +1,42 @@
 import ollama
 import datetime
 import webbrowser
+import pyttsx3
 import speech_recognition as sr
 import re
 import os
 import requests
-import pyautogui
 from colorama import init, Fore, Style
 from notion_client import Client
-import asyncio
-import edge_tts
-import tempfile
-import pygame
-
-notion = Client(auth="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")
-PAGE_ID = "37eddba847a88077a8f9d523621ca6bd"
 
 init(autoreset=True)
 
+# --- CONFIGURATION NOTION ---
+notion = Client(auth="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")
+PAGE_ID = "37eddba847a88077a8f9d523621ca6bd"
+
+# --- L'ANNUAIRE DES APPLICATIONS ---
 APPLICATIONS_LOCALES = {
-    "chrome": "chrome.exe",
-    "brave": "brave.exe",
-    "bloc-notes": "notepad.exe",
-    "calculatrice": "calc.exe",
-    "explorateur": "explorer.exe"
+    "chrome": "chrome",
+    "brave": "brave",
+    "bloc-notes": "notepad",
+    "calculatrice": "calc",
+    "explorateur": "explorer"
 }
 
 def parler(texte):
     try:
+        moteur = pyttsx3.init()
+        moteur.setProperty('rate', 170)
         texte_propre = re.sub(r'\[.*?\]', '', texte).strip()
-        texte_vocal = texte_propre.replace("/", " sur ").replace("*", "").replace("_", " ")
-        if not texte_vocal:
-            return
-
-        async def _synthese():
-            communicate = edge_tts.Communicate(texte_vocal, "fr-FR-HenriNeural", rate="+10%", volume="+0%")
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-                chemin_tmp = f.name
-            await communicate.save(chemin_tmp)
-            return chemin_tmp
-
-        chemin_audio = asyncio.run(_synthese())
-
-        pygame.mixer.init()
-        pygame.mixer.music.load(chemin_audio)
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
-            pygame.time.Clock().tick(10)
-        pygame.mixer.quit()
-        os.remove(chemin_audio)
-
+        texte_propre = re.sub(r'(OUVRIR|LANCER|CREER|SUPPRIMER|LIRE|NOTION|TERMINER).*', '', texte_propre, flags=re.IGNORECASE).strip()
+        if texte_propre:
+            moteur.say(texte_propre)
+            moteur.runAndWait()
     except Exception as e:
         print(Fore.RED + f"[Erreur vocale : {e}]")
 
-# --- LECTURE INTELLIGENTE DU PLANNING ---
+# --- LECTURE DU PLANNING NOTION ---
 def lire_notion():
     try:
         reponse = notion.databases.query(
@@ -72,7 +55,7 @@ def lire_notion():
         
         for page in reponse.get('results', []):
             titre_prop = page['properties'].get('Nom de la tâche', {})
-            date_prop = page['properties'].get("Date d\u2019\u00e9ch\u00e9ance", {}) or page['properties'].get("Date d'\u00e9ch\u00e9ance", {})
+            date_prop = page['properties'].get("Date d’échéance", {}) or page['properties'].get("Date d'échéance", {})
             
             tache_texte = ""
             if titre_prop.get('title'):
@@ -99,7 +82,7 @@ def lire_notion():
             
         return compte_rendu
     except Exception as e:
-        return f"Je n'ai pas pu charger votre emploi du temps. Erreur : {e}"
+        return f"Impossible de charger le planning. Erreur : {e}"
 
 recognizer = sr.Recognizer()
 
@@ -120,7 +103,8 @@ def ecouter(mode_silencieux=False):
 def obtenir_meteo():
     try:
         url = "https://wttr.in/Garges-les-Gonesse?format=%C+%t"
-        return requests.get(url, timeout=3).text.strip()
+        reponse = requests.get(url, timeout=3)
+        return reponse.text.strip()
     except:
         return "Météo indisponible"
 
@@ -129,29 +113,42 @@ historique_conversation = [
     {
         'role': 'system', 
         'content': (
-            "Tu es Système, l'assistant IA exécutif de mon ordinateur, inspiré de Jarvis. Tu n'es PAS un tutoriel.\n"
-            "RÈGLES STRICTES :\n"
-            "1. N'explique JAMAIS comment faire. Exécute directement avec la balise.\n"
-            "2. Fais une seule phrase de confirmation naturelle, SUIVIE IMMÉDIATEMENT de la balise.\n"
-            "3. Actions de base : [OUVRIR: url], [LANCER: nom], [FERMER: nom], [CREER: dossier/fichier|contenu], [LIRE: fichier], [MUTE], [VOL_PLUS], [VOL_MOINS], [CAPTURE], [VIDER_CORBEILLE], [VERROUILLER], [ETEINDRE], [DOSSIER: chemin], [RESTAURER: navigateur].\n"
-            "4. Ajouter une tâche Notion : utilise le format [NOTION: nom_de_la_tache | AAAA-MM-JJ]. Calcule la date de l'échéance de manière très précise à l'aide de la date courante transmise dans les données système. Si l'utilisateur mentionne 'demain', 'lundi prochain' ou une date spécifique, convertis-la rigoureusement en AAAA-MM-JJ. Si aucune date/temporalité n'est détectée, utilise la date du jour actuel.\n"
-            "5. Lire mon planning Notion : [LIRE_NOTION].\n"
-            "6. Marquer une tâche comme terminée : [TERMINER_NOTION: UN_SEUL_MOT_CLE].\n"
-            "INTERDICTION ABSOLUE : N'invente d'autres balises sous aucun prétexte."
+            "Tu es Système, l'assistant IA exécutif de mon ordinateur. Tu es strict, froid et direct.\n"
+            "RÈGLES ABSOLUES (Tu dois répondre par UNE SEULE ligne, AUCUN commentaire supplémentaire) :\n"
+            "1. Discussion (heure, météo, questions) : Réponds naturellement sans balise.\n"
+            "2. Lancer un logiciel (ex: Chrome) : [LANCER: nom].\n"
+            "3. Ouvrir un site web : [OUVRIR: url_complete].\n"
+            "4. Créer un FICHIER TEXTE sur l'ordinateur : [CREER: nom_fichier.ext | contenu].\n"
+            "5. Supprimer un fichier : [SUPPRIMER: nom_fichier.ext].\n"
+            "6. Verrouiller le PC : [VERROUILLER]. Éteindre : [ETEINDRE].\n"
+            "7. Ajouter/Planifier une TÂCHE NOTION (planning) : [NOTION: nom_tache | AAAA-MM-JJ]. Convertis la date en AAAA-MM-JJ. Si aucune date n'est précisée, utilise la date du jour.\n"
+            "8. Lire le planning Notion : [LIRE_NOTION].\n"
+            "9. Terminer une tâche Notion : [TERMINER_NOTION: mot_cle_unique].\n"
+            "INTERDICTION ABSOLUE : N'ajoute JAMAIS de commentaires ou de parenthèses comme '(A noter que...)'. Ne confonds pas TÂCHE (Notion) et FICHIER (Creer)."
         )
     }
 ]
 
 def demander_au_systeme(texte_utilisateur):
-    heure_actuelle = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-    message_formate = f"--- DONNÉES SYSTÈME ---\nDate et Heure actuelles: {heure_actuelle} | Météo: {obtenir_meteo()}\n--- COMMANDE UTILISATEUR ---\n{texte_utilisateur}"
+    heure_actuelle = datetime.datetime.now().strftime("%Hh%M")
+    date_actuelle = datetime.datetime.now().strftime("%Y-%m-%d")
+    
+    message_formate = (
+        f"--- DONNÉES SYSTÈME ---\n"
+        f"Date courante: {date_actuelle} | Heure: {heure_actuelle} | Météo: {obtenir_meteo()}\n"
+        f"--- COMMANDE UTILISATEUR ---\n"
+        f"{texte_utilisateur}"
+    )
+    
     historique_conversation.append({'role': 'user', 'content': message_formate})
     
     try:
         reponse = ollama.chat(model='mistral', messages=historique_conversation)
         texte_reponse = reponse['message']['content']
+        
         historique_conversation[-1]['content'] = texte_utilisateur
         historique_conversation.append({'role': 'assistant', 'content': texte_reponse})
+        
         return texte_reponse
     except Exception as e:
         historique_conversation.pop()
@@ -159,14 +156,10 @@ def demander_au_systeme(texte_utilisateur):
 
 if __name__ == "__main__":
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
-    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v4.8 - EMPLOI DU TEMPS DYNAMIQUE")
+    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v4.0 - Intégration Notion Premium")
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
     
-    parler("Système en ligne. Synchronisation de votre emploi du temps.")
-    briefing_matinal = lire_notion()
-    print(Fore.CYAN + f"Système : {briefing_matinal}")
-    parler(briefing_matinal)
-    
+    parler("Système en ligne. Synchronisation générale effectuée.")
     chemin_bureau = os.path.join(os.path.expanduser("~"), "Desktop")
     
     while True:
@@ -186,16 +179,50 @@ if __name__ == "__main__":
             
             if requete in ['quitter', 'arrête-toi', 'désactiver']: 
                 message_fin = "Extinction des programmes. À bientôt."
-                print(Fore.CYAN + f"Système : {message_fin}"); parler(message_fin)
+                print(Fore.CYAN + f"Système : {message_fin}")
+                parler(message_fin)
                 break
             
             reponse_ia = demander_au_systeme(requete)
-            texte_naturel = re.sub(r'\[.*?\]', '', reponse_ia).strip()
             
-            # --- ACTIONS NOTION EXTENSION DATATION ---
-            if "[NOTION:" in reponse_ia:
+            # --- ACTIONS INDESTRUCTIBLES ---
+            if re.search(r'LIRE_NOTION', reponse_ia, re.IGNORECASE):
+                msg_notion = lire_notion()
+                print(Fore.CYAN + f"Système : Analyse du planning.")
+                print(Fore.MAGENTA + msg_notion)
+                parler(f"Analyse du planning. {msg_notion}")
+
+            elif re.search(r'TERMINER_NOTION\s*:', reponse_ia, re.IGNORECASE):
                 try:
-                    contenu_notion = re.search(r'\[NOTION: (.*?)\]', reponse_ia).group(1)
+                    tache_cible = re.search(r'TERMINER_NOTION\s*:\s*([^\]\n]+)', reponse_ia, re.IGNORECASE).group(1).lower().strip()
+                    reponse_api = notion.databases.query(
+                        database_id=PAGE_ID,
+                        filter={"property": "État", "status": {"does_not_equal": "Terminé"}}
+                    )
+                    trouve = False
+                    for page in reponse_api.get('results', []):
+                        titre_prop = page['properties'].get('Nom de la tâche', {})
+                        if titre_prop.get('title'):
+                            texte_bloc = titre_prop['title'][0]['text']['content'].lower()
+                            if tache_cible in texte_bloc:
+                                notion.pages.update(
+                                    page_id=page['id'],
+                                    properties={"État": {"status": {"name": "Terminé"}}}
+                                )
+                                trouve = True
+                                break
+                    if trouve:
+                        msg = f"La tâche contenant le mot {tache_cible} a été marquée comme terminée."
+                    else:
+                        msg = f"Je n'ai pas trouvé la tâche {tache_cible} dans votre liste."
+                    print(Fore.CYAN + f"Système : {msg}")
+                    parler(msg)
+                except Exception as e:
+                    print(Fore.RED + f"Erreur Notion terminaison : {e}")
+
+            elif re.search(r'NOTION\s*:', reponse_ia, re.IGNORECASE):
+                try:
+                    contenu_notion = re.search(r'NOTION\s*:\s*([^\]\n]+)', reponse_ia, re.IGNORECASE).group(1).strip()
                     date_tache = datetime.datetime.now().strftime("%Y-%m-%d")
                     tache = contenu_notion
                     
@@ -204,187 +231,98 @@ if __name__ == "__main__":
                         tache = tache.strip()
                         date_tache = date_str.strip()
                     
-                    # Détection du nom exact de la colonne date
-                    colonne_date = "Date d\u2019\u00e9ch\u00e9ance"
+                    colonne_date = "Date d’échéance"
                     
                     notion.pages.create(
                         parent={"database_id": PAGE_ID},
                         properties={
-                            "Nom de la tâche": {
-                                "title": [{"text": {"content": tache}}]
-                            },
-                            colonne_date: {
-                                "date": {"start": date_tache}
-                            }
+                            "Nom de la tâche": {"title": [{"text": {"content": tache}}]},
+                            colonne_date: {"date": {"start": date_tache}}
                         }
                     )
-                    msg = texte_naturel if texte_naturel else f"C'est planifié pour le {date_tache}."
-                    print(Fore.CYAN + f"Système : {msg}"); parler(msg)
+                    msg = f"La tâche '{tache}' a bien été planifiée pour le {date_tache}."
+                    print(Fore.CYAN + f"Système : {msg}")
+                    parler(msg)
                 except Exception as e:
-                    print(Fore.RED + f"Erreur d'insertion temporelle Notion : {e}")
-            
-            elif "[TERMINER_NOTION:" in reponse_ia:
-                try:
-                    tache_cible = re.search(r'\[TERMINER_NOTION: (.*?)\]', reponse_ia).group(1).lower()
-                    mots_cibles = tache_cible.replace("'", " ").split()
-                    mots_importants = [mot for mot in mots_cibles if len(mot) > 3]
-                    
-                    reponse_api = notion.databases.query(
-                        database_id=PAGE_ID,
-                        filter={"property": "État", "status": {"does_not_equal": "Terminé"}}
-                    )
-                    
-                    trouve = False
-                    for page in reponse_api.get('results', []):
-                        titre_prop = page['properties'].get('Nom de la tâche', {})
-                        if titre_prop.get('title'):
-                            texte_bloc = titre_prop['title'][0]['text']['content'].lower()
-                            if tache_cible in texte_bloc or any(mot in texte_bloc for mot in mots_importants):
-                                notion.pages.update(
-                                    page_id=page['id'],
-                                    properties={"État": {"status": {"name": "Terminé"}}}
-                                )
-                                trouve = True
-                                break
-                    
-                    if trouve:
-                        msg = texte_naturel if texte_naturel else "C'est coché monsieur."
-                        print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-                    else:
-                        msg = "Je n'ai pas trouvé cette tâche dans votre planning en cours."
-                        print(Fore.RED + f"Système : {msg}"); parler(msg)
-                except Exception as e:
-                    print(Fore.RED + f"Erreur de mise à jour Notion : {e}")
-                    
-            elif "[LIRE_NOTION]" in reponse_ia:
-                notion_data = lire_notion()
-                msg = texte_naturel if texte_naturel else "Analyse de votre planning en cours."
-                print(Fore.CYAN + f"Système : {msg}\n{notion_data}")
-                parler(f"{msg}. {notion_data}")
-            
-            # --- ACTIONS LOGICIELS ET FICHIERS ---
-            elif "[OUVRIR:" in reponse_ia:
-                try:
-                    url = re.search(r'\[OUVRIR: (.*?)\]', reponse_ia).group(1)
-                    webbrowser.open_new_tab(url)
-                    msg = texte_naturel if texte_naturel else "Ouverture demandée."
-                    print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-                except Exception as e: print(Fore.RED + f"Erreur web : {e}")
-                    
-            elif "[LANCER:" in reponse_ia:
-                try:
-                    app = re.search(r'\[LANCER: (.*?)\]', reponse_ia).group(1).lower()
-                    if app in APPLICATIONS_LOCALES: os.system(f"start {APPLICATIONS_LOCALES[app]}")
-                    else: os.system(f"start {app}")
-                    msg = texte_naturel if texte_naturel else f"Lancement effectué."
-                    print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-                except Exception as e: print(Fore.RED + f"Erreur logiciel : {e}")
+                    print(Fore.RED + f"Erreur insertion Notion : {e}")
 
-            elif "[FERMER:" in reponse_ia:
+            elif re.search(r'OUVRIR\s*:', reponse_ia, re.IGNORECASE):
                 try:
-                    app = re.search(r'\[FERMER: (.*?)\]', reponse_ia).group(1).lower()
-                    exe_name = APPLICATIONS_LOCALES.get(app, f"{app}.exe")
-                    os.system(f"taskkill /F /IM {exe_name} /T")
-                    msg = texte_naturel if texte_naturel else f"Fermeture effectuée."
-                    print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-                except Exception as e: print(Fore.RED + f"Erreur fermeture : {e}")
-                    
-            elif "[CREER:" in reponse_ia:
-                try:
-                    debut = reponse_ia.find("[CREER:") + 7; fin = reponse_ia.rfind("]") 
-                    commande_creer = reponse_ia[debut:fin].strip()
-                    if "|" in commande_creer:
-                        nom_fichier, contenu = commande_creer.split("|", 1)
-                        nom_fichier, contenu = nom_fichier.strip(), contenu.strip()
+                    cible = re.search(r'OUVRIR\s*:\s*([^\]\n]+)', reponse_ia, re.IGNORECASE).group(1).strip()
+                    cible = cible.rstrip('.').lower()
+                    if cible in APPLICATIONS_LOCALES:
+                        os.system(f"start {APPLICATIONS_LOCALES[cible]}")
                     else:
-                        nom_fichier, contenu = commande_creer.strip(), "Fichier généré par Système."
+                        if not cible.startswith("http"):
+                            cible = "https://" + cible
+                        webbrowser.open_new_tab(cible)
+                    msg = f"Ouverture de {cible}."
+                    print(Fore.CYAN + f"Système : {msg}")
+                    parler(msg)
+                except Exception as e:
+                    print(Fore.RED + f"Erreur web : {e}")
                     
-                    nom_de_base = os.path.basename(nom_fichier)
-                    if "." not in nom_de_base: nom_fichier += ".txt"
+            elif re.search(r'LANCER\s*:', reponse_ia, re.IGNORECASE):
+                try:
+                    app = re.search(r'LANCER\s*:\s*([^\]\n]+)', reponse_ia, re.IGNORECASE).group(1).strip()
+                    app = app.rstrip('.').lower()
+                    if app in APPLICATIONS_LOCALES: 
+                        os.system(f"start {APPLICATIONS_LOCALES[app]}")
+                    else:
+                        os.system(f"start {app}")
+                    msg = f"Lancement de {app}."
+                    print(Fore.CYAN + f"Système : {msg}")
+                    parler(msg)
+                except Exception as e:
+                    print(Fore.RED + f"Erreur logiciel : {e}")
                     
+            elif re.search(r'CREER\s*:', reponse_ia, re.IGNORECASE):
+                try:
+                    contenu_brut = re.search(r'CREER\s*:\s*([^\]\n]+)', reponse_ia, re.IGNORECASE).group(1).strip()
+                    if "|" in contenu_brut:
+                        nom_fichier, contenu = contenu_brut.split("|", 1)
+                        nom_fichier = nom_fichier.strip()
+                        contenu = contenu.strip()
+                    else:
+                        nom_fichier = contenu_brut.strip()
+                        contenu = "Fichier généré par Système IA."
+                    if "." not in nom_fichier: 
+                        nom_fichier += ".txt"
+                    with open(os.path.join(chemin_bureau, nom_fichier), 'w', encoding='utf-8') as f: 
+                        f.write(contenu)
+                    msg = f"J'ai créé le fichier {nom_fichier}."
+                    print(Fore.CYAN + f"Système : {msg}")
+                    parler(msg)
+                except Exception as e:
+                    print(Fore.RED + f"Erreur création fichier : {e}")
+
+            elif re.search(r'SUPPRIMER\s*:', reponse_ia, re.IGNORECASE):
+                try:
+                    nom_fichier = re.search(r'SUPPRIMER\s*:\s*([^\]\n]+)', reponse_ia, re.IGNORECASE).group(1).strip()
+                    nom_fichier = nom_fichier.rstrip('.')
+                    if "." not in nom_fichier:
+                        nom_fichier += ".txt"
                     chemin_complet = os.path.join(chemin_bureau, nom_fichier)
-                    dossier_parent = os.path.dirname(chemin_complet)
-                    if dossier_parent: os.makedirs(dossier_parent, exist_ok=True)
-                    with open(chemin_complet, 'w', encoding='utf-8') as f: f.write(contenu)
-                    msg = texte_naturel if texte_naturel else f"Création terminée."
-                    print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-                except Exception as e: print(Fore.RED + f"Erreur création : {e}")
-
-            elif "[LIRE:" in reponse_ia:
-                try:
-                    debut = reponse_ia.find("[LIRE:") + 6; fin = reponse_ia.find("]", debut)
-                    nom_fichier_ia = reponse_ia[debut:fin].strip()
-                    nom_cible = os.path.splitext(nom_fichier_ia)[0].lower().replace(" ", "").replace("_", "").replace("-", "")
-                    
-                    fichier_trouve = None
-                    for f in os.listdir(chemin_bureau):
-                        if os.path.isfile(os.path.join(chemin_bureau, f)):
-                            if os.path.splitext(f)[0].lower().replace(" ", "").replace("_", "").replace("-", "") == nom_cible:
-                                fichier_trouve = f; break
-                    
-                    if fichier_trouve:
-                        with open(os.path.join(chemin_bureau, fichier_trouve), 'r', encoding='utf-8') as f: contenu = f.read()
-                        demande = f"Voici le texte exact extrait de {fichier_trouve} :\n'{contenu}'\nFais un résumé de CE TEXTE UNIQUEMENT. N'invente rien d'extérieur."
-                        historique_conversation.append({'role': 'user', 'content': demande})
-                        texte_lu = ollama.chat(model='mistral', messages=historique_conversation)['message']['content']
-                        historique_conversation.append({'role': 'assistant', 'content': texte_lu})
-                        print(Fore.CYAN + f"Système : {texte_lu}"); parler(texte_lu)
+                    if os.path.exists(chemin_complet):
+                        os.remove(chemin_complet)
+                        msg = f"Le fichier {nom_fichier} a été supprimé."
                     else:
-                        print(Fore.RED + f"Système : Fichier introuvable."); parler("Fichier introuvable.")
-                except Exception as e: print(Fore.RED + f"Erreur lecture : {e}")
+                        msg = f"Je ne trouve pas {nom_fichier}."
+                    print(Fore.CYAN + f"Système : {msg}")
+                    parler(msg)
+                except Exception as e:
+                    print(Fore.RED + f"Erreur suppression : {e}")
 
-            elif "[DOSSIER:" in reponse_ia:
-                try:
-                    debut = reponse_ia.find("[DOSSIER:") + 9; fin = reponse_ia.find("]", debut)
-                    chemin_dossier = reponse_ia[debut:fin].strip()
-                    os.makedirs(os.path.join(chemin_bureau, chemin_dossier), exist_ok=True)
-                    msg = texte_naturel if texte_naturel else f"Dossier créé."
-                    print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-                except Exception as e: print(Fore.RED + f"Erreur création dossier : {e}")
-
-            elif "[RESTAURER:" in reponse_ia:
-                try:
-                    debut = reponse_ia.find("[RESTAURER:") + 11; fin = reponse_ia.find("]", debut)
-                    navigateur = reponse_ia[debut:fin].strip().lower()
-                    if navigateur in ["chrome", "brave"]:
-                        exe_name = APPLICATIONS_LOCALES.get(navigateur, f"{navigateur}.exe")
-                        os.system(f'start {exe_name} --restore-last-session')
-                        msg = texte_naturel if texte_naturel else f"Restauration effectuée."
-                        print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-                    else:
-                        print(Fore.RED + f"Système : Support indisponible."); parler("Indisponible.")
-                except Exception as e: print(Fore.RED + f"Erreur restauration : {e}")
-
-            # --- ACTIONS MATÉRIEL & OS ---
-            elif "[MUTE]" in reponse_ia:
-                pyautogui.press("volumemute")
-                msg = texte_naturel if texte_naturel else "Ajustement du volume."
-                print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-            elif "[VOL_PLUS]" in reponse_ia:
-                for _ in range(5): pyautogui.press("volumeup")
-                msg = texte_naturel if texte_naturel else "Volume augmenté."
-                print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-            elif "[VOL_MOINS]" in reponse_ia:
-                for _ in range(5): pyautogui.press("volumedown")
-                msg = texte_naturel if texte_naturel else "Volume diminué."
-                print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-            elif "[CAPTURE]" in reponse_ia:
-                nom_capture = f"capture_ecran_{datetime.datetime.now().strftime('%H%M%S')}.png"
-                pyautogui.screenshot(os.path.join(chemin_bureau, nom_capture))
-                msg = texte_naturel if texte_naturel else "Capture sauvegardée."
-                print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-            elif "[VIDER_CORBEILLE]" in reponse_ia:
-                os.system('powershell.exe -Command "Clear-RecycleBin -Force"')
-                msg = texte_naturel if texte_naturel else "Nettoyage effectué."
-                print(Fore.CYAN + f"Système : {msg}"); parler(msg)
-            elif "[VERROUILLER]" in reponse_ia:
+            elif re.search(r'VERROUILLER', reponse_ia, re.IGNORECASE):
+                print(Fore.RED + "Système : Verrouillage...")
+                parler("Verrouillage de la session.")
                 os.system("rundll32.exe user32.dll,LockWorkStation")
-                msg = texte_naturel if texte_naturel else "Session verrouillée."
-                print(Fore.RED + f"Système : {msg}"); parler(msg)
-            elif "[ETEINDRE]" in reponse_ia:
+                
+            elif re.search(r'ETEINDRE', reponse_ia, re.IGNORECASE):
+                print(Fore.RED + "Système : Extinction...")
+                parler("Extinction dans une minute.")
                 os.system("shutdown /s /t 60")
-                msg = texte_naturel if texte_naturel else "Arrêt programmé."
-                print(Fore.RED + f"Système : {msg}"); parler(msg)
+                
             else:
                 print(Fore.CYAN + f"Système : {reponse_ia}")
                 parler(reponse_ia)
