@@ -12,23 +12,18 @@ import tempfile
 import pygame
 from groq import Groq
 from faster_whisper import WhisperModel
-
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
-
 init(autoreset=True)
 
 # --- CONFIGURATIONS API ---
-
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 PAGE_ID = os.getenv("PAGE_ID")
 
 notion = Client(auth=NOTION_TOKEN)
 client_groq = Groq(api_key=GROQ_API_KEY)
-
 
 # --- L'ANNUAIRE DES APPLICATIONS ---
 APPLICATIONS_LOCALES = {
@@ -50,11 +45,11 @@ def parler(texte):
         texte_propre = re.sub(r'[*#_]', '', texte_propre) 
         texte_propre = re.sub(r'(OUVRIR|LANCER|CREER|SUPPRIMER|LIRE|NOTION|TERMINER|RECHERCHER).*', '', texte_propre, flags=re.IGNORECASE).strip()
         
-        if not texte_propre:
-            return
+        if not texte_propre: return
 
         async def _synthese():
-            communicate = edge_tts.Communicate(texte_propre, "fr-FR-HenriNeural", rate="+10%")
+            # Correction ici : "Hz" au lieu de "%" pour le pitch
+            communicate = edge_tts.Communicate(texte_propre, "fr-FR-HenriNeural", pitch="-15Hz", rate="-5%")
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
                 chemin_tmp = f.name
             await communicate.save(chemin_tmp)
@@ -69,7 +64,6 @@ def parler(texte):
             pygame.time.Clock().tick(10)
         pygame.mixer.quit()
         os.remove(chemin_audio)
-
     except Exception as e:
         print(Fore.RED + f"[Erreur vocale : {e}]")
 
@@ -79,7 +73,6 @@ def lire_notion():
             database_id=PAGE_ID,
             filter={"property": "État", "status": {"does_not_equal": "Terminé"}}
         )
-        
         aujourdhui = datetime.datetime.now().strftime("%Y-%m-%d")
         taches_aujourdhui = []
         taches_futures = []
@@ -87,14 +80,9 @@ def lire_notion():
         for page in reponse.get('results', []):
             titre_prop = page['properties'].get('Nom de la tâche', {})
             date_prop = page['properties'].get("Date d’échéance", {}) or page['properties'].get("Date d'échéance", {})
+            tache_texte = titre_prop['title'][0]['text']['content'] if titre_prop.get('title') else ""
             
-            tache_texte = ""
-            if titre_prop.get('title'):
-                tache_texte = titre_prop['title'][0]['text']['content']
-            
-            date_val = ""
-            if date_prop.get('date') and date_prop['date']:
-                date_val = date_prop['date']['start']
+            date_val = date_prop['date']['start'] if date_prop.get('date') and date_prop['date'] else ""
             
             if tache_texte:
                 if date_val == aujourdhui:
@@ -119,18 +107,17 @@ recognizer = sr.Recognizer()
 
 def ecouter(source, mode_silencieux=False):
     if not mode_silencieux:
-        print(Fore.YELLOW + "\n[🔴 Système écoute ta commande...]")
+        print(Fore.YELLOW + "\n[🔴 Jarvis écoute ta commande...]")
     try:
-        # On écoute brièvement (5 sec max)
+        # Écoute brève
         audio = recognizer.listen(source, timeout=5, phrase_time_limit=5 if mode_silencieux else 10)
         
         if mode_silencieux:
-            # PETIT CERVEAU (Mode Veille) : Rapide, léger, évite que le PC freeze sur les bruits de fond
+            # PETIT CERVEAU : On utilise Google juste pour guetter le mot "Jarvis" (hyper léger)
             texte = recognizer.recognize_google(audio, language="fr-FR").lower()
             return texte
-            
         else:
-            # GROS CERVEAU (Mode Commande) : Whisper analyse ta vraie phrase avec précision
+            # GROS CERVEAU : Whisper prend le relais pour la vraie commande locale
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
                 f.write(audio.get_wav_data())
                 chemin_audio_tmp = f.name
@@ -139,9 +126,10 @@ def ecouter(source, mode_silencieux=False):
             texte = " ".join([segment.text for segment in segments]).strip().lower()
             
             os.remove(chemin_audio_tmp) 
-            texte = re.sub(r'[^\w\s]', '', texte) # Nettoie la ponctuation
+            texte = re.sub(r'[^\w\s]', '', texte) 
             
-            print(Fore.GREEN + f"Toi : {texte}")
+            if texte:
+                print(Fore.GREEN + f"Toi : {texte}")
             return texte
             
     except Exception:
@@ -160,7 +148,7 @@ historique_conversation = [
     {
         'role': 'system', 
         'content': (
-            "Tu es Système, mon assistant IA personnel.\n"
+            "Tu es Jarvis, mon assistant IA personnel.\n"
             "RÈGLES ABSOLUES (Applique LA bonne règle selon ma commande. N'utilise qu'UNE SEULE balise) :\n"
             "1. Demande d'information/conseil (culture, jeux, comparatifs) : Donne une réponse orale détaillée ET ajoute à la fin la balise [RECHERCHER: mots_cles].\n"
             "2. Lancer un logiciel (ex: Chrome, Brave, Discord, Calculatrice...), même si j'utilise le mot 'Ouvre' : Phrase courte de confirmation ET [LANCER: nom_du_logiciel].\n"
@@ -209,38 +197,40 @@ def demander_au_systeme(texte_utilisateur):
 
 if __name__ == "__main__":
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
-    print(Fore.CYAN + Style.BRIGHT + " ⚡ SYSTÈME v5.4 - Micro Permanent & Whisper")
+    print(Fore.CYAN + Style.BRIGHT + " ⚡ JARVIS v6.1 - Mot de Réveil & Accueil")
     print(Fore.CYAN + Style.BRIGHT + "========================================================")
     
     chemin_bureau = os.path.join(os.path.expanduser("~"), "Desktop")
     
-    # MODIFICATION : On ouvre le micro une seule fois ici et on le garde allumé
     with sr.Microphone() as source:
         print(Fore.CYAN + "[Calibrage du bruit ambiant...]")
         recognizer.adjust_for_ambient_noise(source, duration=1)
         
-        parler("Système en ligne. Moteur neuronal activé. Oreilles locales connectées.")
+        # L'accueil au démarrage
+        msg_notion = lire_notion()
+        parler(f"Bonjour monsieur. {msg_notion} En quoi puis-je vous aider aujourd'hui ?")
         
         while True:
-            print(Style.DIM + "\n[💤 Mode Veille : En attente du mot 'Système'...]")
+            print(Style.DIM + "\n[💤 Mode Veille : En attente du mot 'Jarvis'...]")
             
-            # On passe la source à la fonction
+            # Petit cerveau : attend le mot clé
             texte_entendu = ecouter(source, mode_silencieux=True)
             
-            if "système" in texte_entendu or "systeme" in texte_entendu:
-                commande = texte_entendu.replace("système", "").replace("systeme", "").strip()
+            if "jarvis" in texte_entendu:
+                commande = texte_entendu.replace("jarvis", "").strip()
                 if not commande:
                     parler("Oui monsieur ?")
+                    # Gros cerveau (Whisper) : écoute la commande complexe
                     requete = ecouter(source, mode_silencieux=False)
                 else:
                     requete = commande
-                    print(Fore.GREEN + f"Toi : Système, {requete}")
+                    print(Fore.GREEN + f"Toi : Jarvis, {requete}")
 
                 if not requete: continue
                 
-                if requete in ['quitter', 'arrête-toi', 'désactiver']: 
+                if requete in ['quitter', 'arrête-toi', 'désactiver', 'repos']: 
                     message_fin = "Extinction des programmes. À bientôt."
-                    print(Fore.CYAN + f"Système : {message_fin}")
+                    print(Fore.CYAN + f"Jarvis : {message_fin}")
                     parler(message_fin)
                     break
                 
@@ -249,7 +239,7 @@ if __name__ == "__main__":
                 # --- ACTIONS INDESTRUCTIBLES ---
                 if re.search(r'LIRE_NOTION', reponse_ia, re.IGNORECASE):
                     msg_notion = lire_notion()
-                    print(Fore.CYAN + f"Système : Analyse du planning.")
+                    print(Fore.CYAN + f"Jarvis : Analyse du planning.")
                     print(Fore.MAGENTA + msg_notion)
                     parler(f"Analyse du planning. {msg_notion}")
 
@@ -276,7 +266,7 @@ if __name__ == "__main__":
                             msg = f"La tâche contenant le mot {tache_cible} a été marquée comme terminée."
                         else:
                             msg = f"Je n'ai pas trouvé la tâche {tache_cible} dans votre liste."
-                        print(Fore.CYAN + f"Système : {msg}")
+                        print(Fore.CYAN + f"Jarvis : {msg}")
                         parler(msg)
                     except Exception as e:
                         print(Fore.RED + f"Erreur Notion terminaison : {e}")
@@ -302,7 +292,7 @@ if __name__ == "__main__":
                             }
                         )
                         msg = f"La tâche '{tache}' a bien été planifiée pour le {date_tache}."
-                        print(Fore.CYAN + f"Système : {msg}")
+                        print(Fore.CYAN + f"Jarvis : {msg}")
                         parler(msg)
                     except Exception as e:
                         print(Fore.RED + f"Erreur insertion Notion : {e}")
@@ -318,7 +308,7 @@ if __name__ == "__main__":
                                 cible = "https://" + cible
                             webbrowser.open_new_tab(cible)
                         msg = f"Ouverture de {cible}."
-                        print(Fore.CYAN + f"Système : {msg}")
+                        print(Fore.CYAN + f"Jarvis : {msg}")
                         parler(msg)
                     except Exception as e:
                         print(Fore.RED + f"Erreur web : {e}")
@@ -332,7 +322,7 @@ if __name__ == "__main__":
                         else:
                             os.system(f"start {app}")
                         msg = f"Lancement de {app}."
-                        print(Fore.CYAN + f"Système : {msg}")
+                        print(Fore.CYAN + f"Jarvis : {msg}")
                         parler(msg)
                     except Exception as e:
                         print(Fore.RED + f"Erreur logiciel : {e}")
@@ -352,7 +342,7 @@ if __name__ == "__main__":
                         with open(os.path.join(chemin_bureau, nom_fichier), 'w', encoding='utf-8') as f: 
                             f.write(contenu)
                         msg = f"J'ai créé le fichier {nom_fichier}."
-                        print(Fore.CYAN + f"Système : {msg}")
+                        print(Fore.CYAN + f"Jarvis : {msg}")
                         parler(msg)
                     except Exception as e:
                         print(Fore.RED + f"Erreur création fichier : {e}")
@@ -369,18 +359,18 @@ if __name__ == "__main__":
                             msg = f"Le fichier {nom_fichier} a été supprimé."
                         else:
                             msg = f"Je ne trouve pas {nom_fichier}."
-                        print(Fore.CYAN + f"Système : {msg}")
+                        print(Fore.CYAN + f"Jarvis : {msg}")
                         parler(msg)
                     except Exception as e:
                         print(Fore.RED + f"Erreur suppression : {e}")
 
                 elif re.search(r'VERROUILLER', reponse_ia, re.IGNORECASE):
-                    print(Fore.RED + "Système : Verrouillage...")
+                    print(Fore.RED + "Jarvis : Verrouillage...")
                     parler("Verrouillage de la session.")
                     os.system("rundll32.exe user32.dll,LockWorkStation")
                     
                 elif re.search(r'ETEINDRE', reponse_ia, re.IGNORECASE):
-                    print(Fore.RED + "Système : Extinction...")
+                    print(Fore.RED + "Jarvis : Extinction...")
                     parler("Extinction dans une minute.")
                     os.system("shutdown /s /t 60")
                     
@@ -396,11 +386,11 @@ if __name__ == "__main__":
                         reponse_propre = re.sub(r'[*#_]', '', reponse_propre)
                         msg = reponse_propre if reponse_propre else f"Recherche en cours pour {requete_recherche}."
                         
-                        print(Fore.CYAN + f"Système : {msg}")
+                        print(Fore.CYAN + f"Jarvis : {msg}")
                         parler(msg)
                     except Exception as e:
                         print(Fore.RED + f"Erreur de recherche : {e}")
                     
                 else:
-                    print(Fore.CYAN + f"Système : {reponse_ia}")
+                    print(Fore.CYAN + f"Jarvis : {reponse_ia}")
                     parler(reponse_ia)
